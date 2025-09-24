@@ -5,6 +5,17 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+@dataclass
+class SimParams:
+    unit_cost: float
+    starting_cash: float
+    overhead_per_month: float
+    horizon_months: int
+    max_new_units_per_month: int | None
+    hold_flat_above_max: bool
+    lead_time_months: int = 0
+
+
 # ---------------------- UTILS ------------------------
 def default_anchors() -> pd.DataFrame:
     """Return a default anchors DataFrame if none is uploaded."""
@@ -52,7 +63,6 @@ column_config={
 },
 )
 
-
 # ---------------------- RUN SIM ------------------------
 try:
     params = SimParams(
@@ -66,6 +76,13 @@ try:
     )
 
     result = simulate(params, anchors_df)
+
+    # ... rest of layout code ...
+
+except Exception as e:
+    st.error(f"Error: {e}")
+    st.exception(e)
+
 
     # -------------------- LAYOUT -----------------------
     m1, m2, m3, m4 = st.columns(4)
