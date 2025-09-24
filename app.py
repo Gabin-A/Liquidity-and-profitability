@@ -1,5 +1,18 @@
 import math
-anchors_df = default_anchors()
+from dataclasses import dataclass
+from typing import Optional
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+# ---------------------- UTILS ------------------------
+def default_anchors() -> pd.DataFrame:
+    """Return a default anchors DataFrame if none is uploaded."""
+    return pd.DataFrame({
+        "Units_Anchor": [1, 20, 50],
+        "PerUnitMargin": [2500.0, 2500.0, 4200.0],
+    })
+
 
 
 st.title("📈 Economies-of-Scale Growth Simulator")
