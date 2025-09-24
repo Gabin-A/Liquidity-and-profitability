@@ -1,54 +1,4 @@
 import math
-from dataclasses import dataclass
-from typing import Optional
-import numpy as np
-import pandas as pd
-import streamlit as st
-
-@dataclass
-class SimParams:
-    unit_cost: float
-    starting_cash: float
-    overhead_per_month: float
-    horizon_months: int
-    max_new_units_per_month: int | None
-    hold_flat_above_max: bool
-    lead_time_months: int = 0
-
-
-# ---------------------- UTILS ------------------------
-def default_anchors() -> pd.DataFrame:
-    """Return a default anchors DataFrame if none is uploaded."""
-    return pd.DataFrame({
-        "Units_Anchor": [1, 20, 50],
-        "PerUnitMargin": [2500.0, 2500.0, 4200.0],
-    })
-
-
-
-st.title("📈 Economies-of-Scale Growth Simulator")
-st.caption("Self-financed growth with reinvestment, using piecewise-linear per-unit margin vs. fleet size.")
-
-# ---------------------- ANCHORS INPUT ------------------
-st.sidebar.markdown("---")
-st.sidebar.markdown("### Anchors")
-anchors_mode = st.sidebar.radio(
-    "How to provide anchors?", ["Edit in app", "Upload CSV"], horizontal=True
-)
-
-if anchors_mode == "Upload CSV":
-    up = st.sidebar.file_uploader(
-        "Upload anchors CSV (columns: Units_Anchor, PerUnitMargin)", type=["csv"]
-    )
-    if up:
-        anchors_df = pd.read_csv(up)
-    else:
-        st.sidebar.info("No file uploaded yet. Using defaults.")
-        anchors_df = default_anchors()
-else:
-    anchors_df = default_anchors()
-
-# Now anchors_df exists safely here — not before.
 
 
 st.subheader("Anchors (edit if needed)")
@@ -63,65 +13,66 @@ column_config={
 },
 )
 
+
 # ---------------------- RUN SIM ------------------------
 try:
-    params = SimParams(
-        unit_cost=float(unit_cost),
-        starting_cash=float(starting_cash),
-        overhead_per_month=float(overhead),
-        horizon_months=int(horizon),
-        max_new_units_per_month=max_builds_opt,
-        hold_flat_above_max=bool(hold_flat),
-        lead_time_months=int(lead_time),
-    )
+params = SimParams(
+unit_cost=float(unit_cost),
+starting_cash=float(starting_cash),
+overhead_per_month=float(overhead),
+horizon_months=int(horizon),
+max_new_units_per_month=max_builds_opt,
+hold_flat_above_max=bool(hold_flat),
+lead_time_months=int(lead_time),
+)
 
-    result = simulate(params, anchors_df)
 
-    # ... rest of layout code ...
+result = simulate(params, anchors_df)
+
+
+# KPIs
+k1, k2, k3, k4 = st.columns(4)
+last = result.monthly.iloc[-1]
+k1.metric("Final Units", f"{int(last.get('Units_End', last['Units_Start'])):,}")
+k2.metric("Final Monthly Profit", f"${last['MonthlyProfit']:,.0f}")
+k3.metric("Ending Cash", f"${last.get('Cash_End', last['Cash_Start']):,.0f}")
+k4.metric("Per-Unit Margin (end)", f"${last['PerUnitMargin']:,.0f}")
+
+
+st.markdown("---")
+c1, c2 = st.columns(2)
+with c1:
+st.subheader("Units & Profit over time")
+plot_df = result.monthly[["Month", "Units_Start", "MonthlyProfit"]].copy()
+st.line_chart(plot_df.set_index("Month"))
+with c2:
+st.subheader("Cash position over time")
+st.line_chart(result.monthly.set_index("Month")["Cash_Start"]) # cash at start of each month
+
+
+st.subheader("Milestones")
+st.dataframe(result.milestones, use_container_width=True, hide_index=True)
+
+
+st.subheader("Detailed timeline")
+st.dataframe(result.monthly, use_container_width=True)
+
+
+# Downloads
+st.download_button(
+label="Download timeline CSV",
+data=result.monthly.to_csv(index=False).encode("utf-8"),
+file_name="growth_simulation_timeline.csv",
+mime="text/csv",
+)
+st.download_button(
+label="Download anchors CSV",
+data=normalize_anchors(anchors_df).to_csv(index=False).encode("utf-8"),
+file_name="anchors.csv",
+mime="text/csv",
+)
+
 
 except Exception as e:
-    st.error(f"Error: {e}")
-    st.exception(e)
-
-
-    # -------------------- LAYOUT -----------------------
-    m1, m2, m3, m4 = st.columns(4)
-    last = result.monthly.iloc[-1]
-    m1.metric("Final Units", f"{int(last['Units_End']):,}")
-    m2.metric("Final Monthly Profit", f"${last['MonthlyProfit']:,.0f}")
-    m3.metric("Ending Cash", f"${last['Cash_End']:,.0f}")
-    m4.metric("Per-Unit Margin (end)", f"${last['PerUnitMargin']:,.0f}")
-
-    st.markdown("---")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("Units & Profit over time")
-        plot_df = result.monthly[["Month", "Units_Start", "MonthlyProfit"]].copy()
-        st.line_chart(plot_df.set_index("Month"))
-    with c2:
-        st.subheader("Cash position over time")
-        st.line_chart(result.monthly.set_index("Month")["Cash_Start"])
-
-    st.subheader("Milestones")
-    st.dataframe(result.milestones, use_container_width=True, hide_index=True)
-
-    st.subheader("Detailed timeline")
-    st.dataframe(result.monthly, use_container_width=True)
-
-    # Downloads
-    st.download_button(
-        label="Download timeline CSV",
-        data=result.monthly.to_csv(index=False).encode("utf-8"),
-        file_name="growth_simulation_timeline.csv",
-        mime="text/csv",
-    )
-    st.download_button(
-        label="Download anchors CSV",
-        data=normalize_anchors(anchors_df).to_csv(index=False).encode("utf-8"),
-        file_name="anchors.csv",
-        mime="text/csv",
-    )
-
-except Exception as e:
-    st.error(f"Error: {e}")
-    st.exception(e)
+st.error(f"Error: {e}")
+st.exception(e)
