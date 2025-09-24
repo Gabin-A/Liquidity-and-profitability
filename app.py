@@ -1,78 +1,99 @@
 import math
+from dataclasses import dataclass
+from typing import Optional
 
 
-st.subheader("Anchors (edit if needed)")
-anchors_df = st.data_editor(
-anchors_df,
-num_rows="dynamic",
-hide_index=True,
-use_container_width=True,
-column_config={
-"Units_Anchor": st.column_config.NumberColumn(step=1, help="Fleet size at which this margin applies."),
-"PerUnitMargin": st.column_config.NumberColumn(format="$%.0f", help="Per-unit margin at that fleet size (per month)."),
-},
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+
+# ---------------------- PAGE CONFIG ----------------------
+st.set_page_config(
+page_title="Economies-of-Scale Growth Simulator",
+page_icon="📈",
+layout="wide",
 )
 
 
-# ---------------------- RUN SIM ------------------------
-try:
-params = SimParams(
-unit_cost=float(unit_cost),
-starting_cash=float(starting_cash),
-overhead_per_month=float(overhead),
-horizon_months=int(horizon),
-max_new_units_per_month=max_builds_opt,
-hold_flat_above_max=bool(hold_flat),
-lead_time_months=int(lead_time),
-)
+# ---------------------- DEFAULTS & UTILS -----------------
 
 
-result = simulate(params, anchors_df)
+def default_anchors() -> pd.DataFrame:
+"""Return default anchors used when no CSV is uploaded."""
+return pd.DataFrame({
+"Units_Anchor": [1, 20, 50],
+"PerUnitMargin": [2500.0, 2500.0, 4200.0],
+})
 
 
-# KPIs
-k1, k2, k3, k4 = st.columns(4)
-last = result.monthly.iloc[-1]
-k1.metric("Final Units", f"{int(last.get('Units_End', last['Units_Start'])):,}")
-k2.metric("Final Monthly Profit", f"${last['MonthlyProfit']:,.0f}")
-k3.metric("Ending Cash", f"${last.get('Cash_End', last['Cash_Start']):,.0f}")
-k4.metric("Per-Unit Margin (end)", f"${last['PerUnitMargin']:,.0f}")
+@dataclass
+class SimParams:
+unit_cost: float
+starting_cash: float
+overhead_per_month: float
+horizon_months: int
+max_new_units_per_month: Optional[int]
+hold_flat_above_max: bool
+lead_time_months: int = 0 # units purchased activate after this many months
 
 
-st.markdown("---")
-c1, c2 = st.columns(2)
-with c1:
-st.subheader("Units & Profit over time")
-plot_df = result.monthly[["Month", "Units_Start", "MonthlyProfit"]].copy()
-st.line_chart(plot_df.set_index("Month"))
-with c2:
-st.subheader("Cash position over time")
-st.line_chart(result.monthly.set_index("Month")["Cash_Start"]) # cash at start of each month
+@dataclass
+class SimResult:
+monthly: pd.DataFrame
+milestones: pd.DataFrame
 
 
-st.subheader("Milestones")
-st.dataframe(result.milestones, use_container_width=True, hide_index=True)
 
 
-st.subheader("Detailed timeline")
-st.dataframe(result.monthly, use_container_width=True)
+def normalize_anchors(df: pd.DataFrame) -> pd.DataFrame:
+if "Units_Anchor" not in df.columns or "PerUnitMargin" not in df.columns:
+raise ValueError("Anchors must have columns: Units_Anchor, PerUnitMargin")
+df = df.dropna(subset=["Units_Anchor", "PerUnitMargin"]).copy()
+df["Units_Anchor"] = df["Units_Anchor"].astype(int)
+df["PerUnitMargin"] = df["PerUnitMargin"].astype(float)
+df = df.sort_values("Units_Anchor").drop_duplicates("Units_Anchor", keep="last")
+if df.empty:
+raise ValueError("Provide at least one anchor row.")
+return df.reset_index(drop=True)
 
 
-# Downloads
-st.download_button(
-label="Download timeline CSV",
-data=result.monthly.to_csv(index=False).encode("utf-8"),
-file_name="growth_simulation_timeline.csv",
-mime="text/csv",
-)
-st.download_button(
-label="Download anchors CSV",
-data=normalize_anchors(anchors_df).to_csv(index=False).encode("utf-8"),
-file_name="anchors.csv",
-mime="text/csv",
-)
 
 
-except Exception as e:
-st.error(f"Error: {e}")
+def per_unit_margin_from_anchors(units: int, anchors: pd.DataFrame, hold_flat: bool) -> float:
+"""Piecewise-linear interpolation of per-unit margin as a function of fleet size."""
+U = anchors["Units_Anchor"].to_numpy()
+M = anchors["PerUnitMargin"].to_numpy()
+
+
+# Below minimum
+if units <= U[0]:
+return float(M[0])
+
+
+# Between anchors
+for i in range(len(U) - 1):
+if U[i] <= units <= U[i + 1]:
+u0, m0 = U[i], M[i]
+u1, m1 = U[i + 1], M[i + 1]
+if u1 == u0:
+return float(m1)
+w = (units - u0) / (u1 - u0)
+return float(m0 * (1 - w) + m1 * w)
+
+
+# Above maximum
+if hold_flat:
+return float(M[-1])
+
+
+# Extrapolate using last slope if possible, else flat
+if len(U) >= 2 and (U[-1] - U[-2]) != 0:
+slope = (M[-1] - M[-2]) / (U[-1] - U[-2])
+return float(M[-1] + slope * (units - U[-1]))
+return float(M[-1])
+
+
+
+
 st.exception(e)
