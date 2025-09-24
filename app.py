@@ -18,6 +18,27 @@ def default_anchors() -> pd.DataFrame:
 st.title("📈 Economies-of-Scale Growth Simulator")
 st.caption("Self-financed growth with reinvestment, using piecewise-linear per-unit margin vs. fleet size.")
 
+# ---------------------- ANCHORS INPUT ------------------
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Anchors")
+anchors_mode = st.sidebar.radio(
+    "How to provide anchors?", ["Edit in app", "Upload CSV"], horizontal=True
+)
+
+if anchors_mode == "Upload CSV":
+    up = st.sidebar.file_uploader(
+        "Upload anchors CSV (columns: Units_Anchor, PerUnitMargin)", type=["csv"]
+    )
+    if up:
+        anchors_df = pd.read_csv(up)
+    else:
+        st.sidebar.info("No file uploaded yet. Using defaults.")
+        anchors_df = default_anchors()
+else:
+    anchors_df = default_anchors()
+
+# Now anchors_df exists safely here — not before.
+
 
 st.subheader("Anchors (edit if needed)")
 anchors_df = st.data_editor(
